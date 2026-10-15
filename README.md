@@ -57,6 +57,15 @@ iosApp/         SwiftUI host app (XcodeGen spec)
 
 From the command line: `./gradlew :composeApp:installDebug`.
 
+### Download a ready-made APK
+
+GitHub builds the APK on every push ([releases page](https://github.com/jonbul/touristeye/releases)):
+
+- **Any branch except `main`**: a *snapshot* pre-release named `snapshot-<branch>`, replaced on each push,
+  with version `X.Y.Z-SNAPSHOT.<build>+<branch>`.
+- **`main`** (when a pull request is merged): a numbered release `vX.Y.Z`. `X.Y` is `appVersion` in
+  `gradle.properties` (raise it for bigger releases); `Z` goes up by one with every release.
+
 ## Run on iOS (needs a Mac with Xcode)
 
 ```bash

@@ -66,8 +66,9 @@ android {
         applicationId = "com.touristeye"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
-        versionCode = 1
-        versionName = "1.0"
+        // CI passes the real values; local builds use the base version from gradle.properties.
+        versionCode = (findProperty("appVersionCode") as String?)?.toInt() ?: 1
+        versionName = (findProperty("appVersionName") as String?) ?: "${property("appVersion")}.0-local"
     }
     packaging {
         resources {
