@@ -1,47 +1,102 @@
 name: Android APK
 
+# Branches other than main: every push publishes a snapshot APK (pre-release, one per branch, replaced on each push).
+# main (a merged PR): publishes a numbered release vX.Y.Z, where X.Y comes from appVersion in gradle.properties
+# and Z goes up by one with every release.
+
 on:
   push:
-    branches: [main]
-  pull_request:
+    branches: ['**']
   workflow_dispatch:
 
 permissions:
   contents: write
 
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0 # tags are needed to work out the next version
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
 
       - uses: gradle/actions/setup-gradle@v4
 
-      - name: Build debug APK
-        run: ./gradlew :composeApp:assembleDebug --stacktrace
+      - name: Work out the version
+        id: version
+        run: |
+          base=$(grep '^appVersion=' gradle.properties | cut -d= -f2 | tr -d '[:space:]')
+          last=$(git tag --list "v${base}.*" | sed "s/^v${base}\.//" | grep -E '^[0-9]+$' | sort -n | tail -1)
+          patch=$(( ${last:--1} + 1 ))
+          version="${base}.${patch}"
+          branch="${GITHUB_REF_NAME}"
+          if [ "$branch" = "main" ]; then
+            name="$version"
+            tag="v$version"
+          else
+            slug=$(echo "$branch" | tr -c 'A-Za-z0-9._-' '-' | sed 's/-*$//')
+            name="${version}-SNAPSHOT.${GITHUB_RUN_NUMBER}+${slug}"
+            tag="snapshot-${slug}"
+          fi
+          echo "name=$name" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "apk=touristeye-${name//+/-}.apk" >> "$GITHUB_OUTPUT"
+          echo "Version $name, tag $tag"
+
+      - name: Build APK
+        run: >
+          ./gradlew :composeApp:assembleDebug
+          -PappVersionName=${{ steps.version.outputs.name }}
+          -PappVersionCode=${{ github.run_number }}
 
       - name: Run unit tests
         run: ./gradlew :composeApp:testDebugUnitTest
 
-      - name: Rename APK
-        run: cp composeApp/build/outputs/apk/debug/composeApp-debug.apk touristeye-debug.apk
+      - name: Name the APK
+        run: cp composeApp/build/outputs/apk/debug/composeApp-debug.apk "${{ steps.version.outputs.apk }}"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: touristeye-debug-apk
-          path: touristeye-debug.apk
+          name: ${{ steps.version.outputs.apk }}
+          path: ${{ steps.version.outputs.apk }}
 
-      # A release per build on main, so the APK can be downloaded straight from the phone.
+      - name: Publish snapshot
+        if: github.ref_name != 'main'
+        run: |
+          tag="${{ steps.version.outputs.tag }}"
+          gh release delete "$tag" --cleanup-tag --yes 2>/dev/null || true
+          gh release create "$tag" "${{ steps.version.outputs.apk }}" \
+            --prerelease --target "$GITHUB_SHA" \
+            --title "Snapshot ${{ steps.version.outputs.name }}" \
+            --notes "Test build of branch \`${GITHUB_REF_NAME}\` at ${GITHUB_SHA}. Replaced on every push to the branch."
+
       - name: Publish release
-        if: github.event_name != 'pull_request'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: build-${{ github.run_number }}
-          name: Touristeye build ${{ github.run_number }}
-          body: Debug APK built from ${{ github.sha }}. Install it on an Android phone (allow installs from unknown sources).
-          files: touristeye-debug.apk
+        if: github.ref_name == 'main'
+        run: |
+          gh release create "${{ steps.version.outputs.tag }}" "${{ steps.version.outputs.apk }}" \
+            --target "$GITHUB_SHA" --latest \
+            --title "Touristeye ${{ steps.version.outputs.name }}" \
+            --generate-notes
+
+      # A branch that is deleted after its PR merges leaves its snapshot behind; clear snapshots of merged branches.
+      - name: Remove snapshots of deleted branches
+        if: github.ref_name == 'main'
+        run: |
+          for tag in $(gh release list --limit 100 --json tagName --jq '.[].tagName' | grep '^snapshot-' || true); do
+            slug="${tag#snapshot-}"
+            if ! git ls-remote --exit-code --heads origin | awk '{print $2}' | sed 's#refs/heads/##' \
+                 | tr -c 'A-Za-z0-9._-\n' '-' | sed 's/-*$//' | grep -qx "$slug"; then
+              gh release delete "$tag" --cleanup-tag --yes
+            fi
+          done

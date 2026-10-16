@@ -1,6 +1,7 @@
 package com.touristeye.data
 
 import com.touristeye.geo.GeoLocation
+import com.touristeye.geo.GeoMath
 import com.touristeye.geo.Poi
 import com.touristeye.geo.PoiCategory
 import io.ktor.client.HttpClient
@@ -10,50 +11,103 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpHeaders
 import io.ktor.http.isSuccess
 import io.ktor.http.parameters
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlin.math.cos
+import kotlin.math.roundToLong
 
-/** Tourist POIs from OpenStreetMap through the Overpass API. */
+/**
+ * Tourist POIs from OpenStreetMap through the public Overpass API.
+ * The public servers are often busy, so if one hasn't answered after [hedgeAfterMillis]
+ * (or fails) the next one is asked too, and the first good answer wins.
+ */
 class OverpassPoiSource(
     private val client: HttpClient,
     private val endpoints: List<String> = listOf(
         "https://overpass-api.de/api/interpreter",
+        "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
         "https://overpass.private.coffee/api/interpreter",
+        "https://overpass.kumi.systems/api/interpreter",
     ),
-    private val maxResults: Int = 400,
+    private val maxResults: Int = 500,
     private val language: String = "en",
+    private val hedgeAfterMillis: Long = 12_000,
 ) : PoiSource {
     override val name = "OpenStreetMap"
 
-    override suspend fun fetch(center: GeoLocation, radiusMeters: Int): List<Poi> {
+    override suspend fun fetch(center: GeoLocation, radiusMeters: Int): List<Poi> = coroutineScope {
         val query = buildQuery(center, radiusMeters)
+        val results = Channel<Result<List<Poi>>>(Channel.UNLIMITED)
+        val jobs = mutableListOf<Job>()
+        var started = 0
+        var finished = 0
         var lastError: Throwable? = null
-        for (endpoint in endpoints) {
-            try {
-                val response = client.submitForm(endpoint, parameters { append("data", query) }) {
-                    header(HttpHeaders.UserAgent, USER_AGENT)
+
+        fun startNext() {
+            if (started >= endpoints.size) return
+            val endpoint = endpoints[started++]
+            jobs += launch {
+                val result = try {
+                    Result.success(request(endpoint, query))
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    Result.failure(e)
                 }
-                if (!response.status.isSuccess()) error("Overpass ${response.status.value}")
-                return parse(response.bodyAsText(), language)
-            } catch (e: Throwable) {
-                if (e is kotlinx.coroutines.CancellationException) throw e
-                lastError = e
+                results.send(result)
             }
+        }
+
+        startNext()
+        while (finished < started) {
+            val result = withTimeoutOrNull(hedgeAfterMillis) { results.receive() }
+            if (result == null) {
+                startNext()
+                continue
+            }
+            finished++
+            result.onSuccess { pois ->
+                jobs.forEach { it.cancel() }
+                return@coroutineScope pois
+            }
+            lastError = result.exceptionOrNull()
+            startNext()
         }
         throw lastError ?: IllegalStateException("No Overpass endpoint")
     }
 
+    private suspend fun request(endpoint: String, query: String): List<Poi> {
+        val response = client.submitForm(endpoint, parameters { append("data", query) }) {
+            header(HttpHeaders.UserAgent, USER_AGENT)
+        }
+        if (!response.status.isSuccess()) error("Overpass ${response.status.value}")
+        return parse(response.bodyAsText(), language)
+    }
+
+    /**
+     * Uses a bounding box instead of `around`: Overpass can then use its spatial index for every
+     * tag filter, which is much faster. Results outside the circle are filtered out by distance later.
+     */
     fun buildQuery(center: GeoLocation, radiusMeters: Int): String {
-        val around = "(around:$radiusMeters,${center.latitude},${center.longitude})"
+        val dLat = radiusMeters / 111_320.0
+        val dLon = radiusMeters / (111_320.0 * cos(GeoMath.toRad(center.latitude)).coerceAtLeast(0.01))
+        fun f(v: Double) = ((v * 100_000).roundToLong() / 100_000.0).toString()
+        val bbox = "${f(center.latitude - dLat)},${f(center.longitude - dLon)},${f(center.latitude + dLat)},${f(center.longitude + dLon)}"
         return """
-            [out:json][timeout:25];
+            [out:json][timeout:50][bbox:$bbox];
             (
-              nwr["tourism"~"^(attraction|museum|viewpoint|artwork|gallery|zoo|theme_park|aquarium)$"]["name"]$around;
-              nwr["historic"~"^(monument|castle|memorial|ruins|archaeological_site|fort|tower|city_gate|palace|manor|church|monastery|ship|aqueduct|bridge)$"]["name"]$around;
-              nwr["amenity"="place_of_worship"]["name"]["wikidata"]$around;
-              nwr["building"~"^(cathedral|basilica)$"]["name"]$around;
-              node["natural"~"^(peak|volcano)$"]["name"]$around;
-              nwr["man_made"~"^(lighthouse|tower)$"]["name"]["wikidata"]$around;
+              nwr["tourism"~"^(attraction|museum|viewpoint|artwork|gallery|zoo|theme_park|aquarium)$"]["name"];
+              nwr["historic"~"^(monument|castle|memorial|ruins|archaeological_site|fort|tower|city_gate|palace|manor|church|monastery|ship|aqueduct|bridge)$"]["name"];
+              nwr["amenity"="place_of_worship"]["name"]["wikidata"];
+              nwr["building"~"^(cathedral|basilica)$"]["name"];
+              node["natural"~"^(peak|volcano)$"]["name"];
+              nwr["man_made"~"^(lighthouse|tower)$"]["name"]["wikidata"];
             );
             out center tags qt $maxResults;
         """.trimIndent()
@@ -72,6 +126,7 @@ class OverpassPoiSource(
             val historic = tags["historic"]
             return when {
                 tourism == "museum" || tourism == "gallery" -> PoiCategory.Museum
+                tourism == "artwork" -> PoiCategory.Art
                 tourism == "viewpoint" -> PoiCategory.Viewpoint
                 tags["natural"] == "peak" || tags["natural"] == "volcano" -> PoiCategory.Nature
                 tags["amenity"] == "place_of_worship" || tags["building"] in setOf("cathedral", "basilica") ||

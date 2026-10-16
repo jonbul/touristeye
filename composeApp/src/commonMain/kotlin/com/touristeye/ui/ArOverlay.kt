@@ -60,7 +60,7 @@ fun ArOverlay(
         val density = LocalDensity.current
         val widthPx = constraints.maxWidth.toDouble()
         val heightPx = constraints.maxHeight.toDouble()
-        val projector = remember(fov, widthPx, heightPx) { ArProjector(fov, widthPx, heightPx) }
+        val projector = remember(fov, widthPx, heightPx) { ArProjector(fov.forViewport(widthPx, heightPx), widthPx, heightPx) }
         val labelW = with(density) { LabelWidth.toPx() }.toDouble()
         val labelH = with(density) { LabelHeight.toPx() }.toDouble()
         val gap = with(density) { LabelGap.toPx() }.toDouble()

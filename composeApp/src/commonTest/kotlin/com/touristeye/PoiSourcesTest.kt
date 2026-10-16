@@ -1,7 +1,7 @@
 package com.touristeye
 
 import com.touristeye.app.ArController
-import com.touristeye.data.FallbackPoiSource
+import com.touristeye.data.PoiMerge
 import com.touristeye.data.OverpassPoiSource
 import com.touristeye.data.PoiSource
 import com.touristeye.data.WikipediaPoiSource
@@ -39,13 +39,13 @@ class PoiSourcesTest {
     fun parsesOverpass() {
         val pois = OverpassPoiSource.parse(OVERPASS_SAMPLE, language = "es").associateBy { it.name }
         assertEquals(5, pois.size, "unnamed viewpoint is skipped")
+        assertEquals(PoiCategory.Art, pois.getValue("Peine del Viento").category)
         val peak = pois.getValue("Monte Igueldo")
         assertEquals(PoiCategory.Nature, peak.category)
         assertEquals(181.0, peak.elevation)
         val comb = pois.getValue("Peine del Viento")
         assertEquals(43.3237, comb.latitude)
         assertEquals("https://es.wikipedia.org/wiki/Peine_del_Viento", comb.wikipediaUrl)
-        assertEquals(PoiCategory.Attraction, comb.category)
         assertEquals(PoiCategory.Religious, pois.getValue("Catedral del Buen Pastor").category)
         assertEquals(PoiCategory.Museum, pois.getValue("San Telmo Museoa").category)
         assertEquals("https://www.santelmomuseoa.eus", pois.getValue("San Telmo Museoa").website)
@@ -69,24 +69,52 @@ class PoiSourcesTest {
         val pois = source.fetch(GeoLocation(43.32, -1.98), 1500)
         assertEquals(listOf("first.example", "second.example"), requested)
         assertEquals(5, pois.size)
-        assertTrue("around%3A1500%2C43.32%2C-1.98" in body, body)
+        assertTrue("%5Bbbox%3A43.30653%2C-1.99852" in body, body)
     }
 
     @Test
-    fun parsesWikipediaGeosearch() {
-        val json = """{"batchcomplete":"","query":{"geosearch":[{"pageid":123,"ns":0,"title":"Playa de la Concha","lat":43.3176,"lon":-1.9876,"dist":120.5,"primary":""}]}}"""
-        val pois = WikipediaPoiSource.parse(json, "es")
-        assertEquals(1, pois.size)
-        assertEquals("Playa de la Concha", pois[0].name)
-        assertEquals("https://es.wikipedia.org/?curid=123", pois[0].wikipediaUrl)
+    fun parsesWikipediaGeosearchWithCategories() {
+        val json = """{"batchcomplete":true,"query":{"pages":[
+          {"pageid":1,"title":"Catedral del Buen Pastor (San Sebastián)","description":"catedral en San Sebastián, España","coordinates":[{"lat":43.317,"lon":-1.98}]},
+          {"pageid":2,"title":"Calle de San Juan (San Sebastián)","description":"calle de San Sebastián","coordinates":[{"lat":43.32,"lon":-1.98}]},
+          {"pageid":3,"title":"Boulevard (parada en San Sebastián)","coordinates":[{"lat":43.32,"lon":-1.98}]},
+          {"pageid":4,"title":"Teatro Principal (San Sebastián)","description":"teatro en Donostia/San Sebastián","coordinates":[{"lat":43.322,"lon":-1.985}]},
+          {"pageid":5,"title":"Monte Urgull","description":"monte en San Sebastián","coordinates":[{"lat":43.325,"lon":-1.986}]},
+          {"pageid":6,"title":"San Telmo Museoa","description":"museo en San Sebastián","coordinates":[{"lat":43.324,"lon":-1.984}]},
+          {"pageid":7,"title":"Parte Vieja","coordinates":[{"lat":43.323,"lon":-1.985}]},
+          {"pageid":8,"title":"Sin coordenadas","description":"museo"}
+        ]}}"""
+        val pois = WikipediaPoiSource.parse(json, "es").associate { it.name to it.category }
+        assertEquals(
+            mapOf(
+                "Catedral del Buen Pastor" to PoiCategory.Religious,
+                "Teatro Principal" to PoiCategory.Historic,
+                "Monte Urgull" to PoiCategory.Nature,
+                "San Telmo Museoa" to PoiCategory.Museum,
+                "Parte Vieja" to PoiCategory.Attraction,
+            ),
+            pois,
+        )
     }
 
     @Test
-    fun fallbackUsesNextSourceOnError() = runTest {
-        val failing = FakeSource(error = true)
-        val working = FakeSource(listOf(poi("a", 43.3201, -1.98)))
-        val pois = FallbackPoiSource(listOf(failing, working)).fetch(GeoLocation(43.32, -1.98), 500)
-        assertEquals(listOf("a"), pois.map { it.id })
+    fun wikipediaCategoriesUseTheHeadOfTheDescription() {
+        assertEquals(PoiCategory.Religious, WikipediaPoiSource.categorize("Burgos Cathedral", "cathedral in the city of Burgos, Spain"))
+        assertEquals(PoiCategory.Art, WikipediaPoiSource.categorize("Peine del Viento", "escultura de Eduardo Chillida"))
+        assertNull(WikipediaPoiSource.categorize("Amara", "barrio de San Sebastián"))
+        assertEquals(PoiCategory.Historic, WikipediaPoiSource.categorize("Castillo de la Mota", null))
+    }
+
+    @Test
+    fun mergeDropsDuplicatesFromLaterSources() {
+        val osm = listOf(poi("osm", 43.3225, -1.9840).copy(name = "Catedral del Buen Pastor"))
+        val wiki = listOf(
+            poi("wiki1", 43.3230, -1.9845).copy(name = "Catedral del Buen Pastor de San Sebastián", wikipediaUrl = "https://w/1"),
+            poi("wiki2", 43.3300, -1.9900).copy(name = "Monte Ulia"),
+        )
+        val merged = PoiMerge.merge(listOf(osm, wiki))
+        assertEquals(listOf("osm", "wiki2"), merged.map { it.id })
+        assertEquals("https://w/1", merged[0].wikipediaUrl)
     }
 
     @Test
@@ -98,7 +126,7 @@ class PoiSourcesTest {
             ),
         )
         val testScope = TestScope(StandardTestDispatcher(testScheduler))
-        val controller = ArController(source, testScope)
+        val controller = ArController(listOf(source, FakeSource(error = true)), testScope)
 
         controller.setRadius(1_000)
         controller.onLocation(GeoLocation(43.32, -1.98))
@@ -125,7 +153,17 @@ class PoiSourcesTest {
 
         controller.toggleCategory(PoiCategory.Attraction)
         assertTrue(controller.state.value.visible.isEmpty())
-        assertNull(controller.state.value.error)
+        assertNull(controller.state.value.error, "one source failing is not an error")
+    }
+
+    @Test
+    fun controllerReportsErrorWhenAllSourcesFail() = runTest {
+        val testScope = TestScope(StandardTestDispatcher(testScheduler))
+        val controller = ArController(listOf(FakeSource(error = true), FakeSource(error = true)), testScope)
+        controller.onLocation(GeoLocation(43.32, -1.98))
+        testScope.advanceUntilIdle()
+        assertEquals("boom", controller.state.value.error)
+        assertTrue(!controller.state.value.loading)
     }
 
     private fun poi(id: String, lat: Double, lon: Double) =

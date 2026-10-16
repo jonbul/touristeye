@@ -7,6 +7,10 @@ import kotlin.math.tan
 
 /** Field of view of the full camera image, as seen with the phone upright (portrait). */
 data class CameraFov(val horizontalDegrees: Double, val verticalDegrees: Double) {
+    /** The same camera as seen on a screen of this shape: in landscape the long side is horizontal. */
+    fun forViewport(width: Double, height: Double): CameraFov =
+        if (width > height) CameraFov(horizontalDegrees = verticalDegrees, verticalDegrees = horizontalDegrees) else this
+
     companion object {
         /** Typical phone main camera in portrait; used until the real value is known. */
         val Default = CameraFov(horizontalDegrees = 50.0, verticalDegrees = 64.0)

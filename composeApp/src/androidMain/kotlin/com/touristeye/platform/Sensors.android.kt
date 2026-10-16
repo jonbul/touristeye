@@ -6,6 +6,8 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.view.Surface
+import android.view.WindowManager
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.State
@@ -37,6 +39,9 @@ actual fun rememberDeviceOrientation(location: GeoLocation?): State<DeviceOrient
             ?: sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         val magnetometer = sensorManager.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD)
 
+        val windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
+        @Suppress("DEPRECATION")
+        fun displayRotation() = windowManager.defaultDisplay.rotation
         val smoother = OrientationSmoother()
         val r = FloatArray(9)
         val gravity = FloatArray(3)
@@ -61,7 +66,16 @@ actual fun rememberDeviceOrientation(location: GeoLocation?): State<DeviceOrient
             }
             // R maps device axes to the world (X east, Y magnetic north, Z up); its columns are the device axes.
             val forward = Enu(-r[2].toDouble(), -r[5].toDouble(), -r[8].toDouble()).toTrueNorth(declinationRad)
-            val right = Enu(r[0].toDouble(), r[3].toDouble(), r[6].toDouble()).toTrueNorth(declinationRad)
+            // The screen's right edge depends on how the phone is turned (portrait, landscape left/right…).
+            val deviceX = Enu(r[0].toDouble(), r[3].toDouble(), r[6].toDouble())
+            val deviceY = Enu(r[1].toDouble(), r[4].toDouble(), r[7].toDouble())
+            val screenRight = when (displayRotation()) {
+                Surface.ROTATION_90 -> deviceY * -1.0
+                Surface.ROTATION_180 -> deviceX * -1.0
+                Surface.ROTATION_270 -> deviceY
+                else -> deviceX
+            }
+            val right = screenRight.toTrueNorth(declinationRad)
             state.value = smoother.update(forward, right, reliable)
         }
 
