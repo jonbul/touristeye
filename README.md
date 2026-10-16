@@ -20,6 +20,18 @@ One Kotlin codebase for **Android** and **iOS** (Kotlin Multiplatform + Compose 
 
 Android follows the phone's rotation (portrait and landscape); iOS is portrait only for now.
 
+## Game mode (Android)
+
+Tap **🎯 Game** to switch to a shooting game. Boxes appear around what the camera recognises
+(person, car, dog, bicycle, bench…); aim the crosshair and tap **FIRE** (or anywhere) to blow it up
+and score. When nothing is boxed under the crosshair, the app asks an image labeller what is there
+(tree, building, plant…) and blows that up instead.
+
+It only tells *what kind* of thing it is, never who a person is, and it all runs on the phone:
+MediaPipe's EfficientDet-Lite0 detector (80 COCO classes) plus ML Kit's on-device image labelling.
+The detector model is downloaded at build time into `composeApp/src/androidMain/assets/`.
+iOS shows the sightseeing view only for now.
+
 ## How it works
 
 | Piece | Where |

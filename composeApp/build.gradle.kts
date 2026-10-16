@@ -51,6 +51,8 @@ kotlin {
             implementation(libs.androidx.camera.view)
             implementation(libs.kotlinx.coroutines.android)
             implementation(libs.ktor.client.okhttp)
+            implementation(libs.mediapipe.tasks.vision)
+            implementation(libs.mlkit.image.labeling)
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
@@ -70,6 +72,9 @@ android {
         versionCode = (findProperty("appVersionCode") as String?)?.toInt() ?: 1
         versionName = (findProperty("appVersionName") as String?) ?: "${property("appVersion")}.0-local"
     }
+    androidResources {
+        noCompress += "tflite"
+    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -85,3 +90,18 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
+
+// The game's object detector (EfficientDet-Lite0, COCO classes, Apache 2.0) is fetched at build time
+// instead of being committed.
+val detectorModel = layout.projectDirectory.file("src/androidMain/assets/efficientdet_lite0.tflite")
+val downloadDetectorModel by tasks.registering {
+    val target = detectorModel.asFile
+    outputs.file(target)
+    onlyIf { !target.exists() }
+    doLast {
+        target.parentFile.mkdirs()
+        val url = "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/1/efficientdet_lite0.tflite"
+        java.net.URI(url).toURL().openStream().use { input -> target.outputStream().use { input.copyTo(it) } }
+    }
+}
+tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(downloadDetectorModel) }
