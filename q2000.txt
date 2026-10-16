@@ -1,0 +1,10 @@
+[out:json][timeout:25][bbox:43.30443,-2.00860,43.34037,-1.95920];
+(
+nwr["tourism"~"^(attraction|museum|viewpoint|artwork|gallery|zoo|theme_park|aquarium)$"]["name"];
+nwr["historic"~"^(monument|castle|memorial|ruins|archaeological_site|fort|tower|city_gate|palace|manor|church|monastery|ship|aqueduct|bridge)$"]["name"];
+nwr["amenity"="place_of_worship"]["name"]["wikidata"];
+nwr["building"~"^(cathedral|basilica)$"]["name"];
+node["natural"~"^(peak|volcano)$"]["name"];
+nwr["man_made"~"^(lighthouse|tower)$"]["name"]["wikidata"];
+);
+out center tags qt 400;
