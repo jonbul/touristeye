@@ -13,6 +13,10 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -20,6 +24,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.touristeye.platform.AppPermissions
 import com.touristeye.platform.rememberAppPermissions
+import com.touristeye.game.GameScreen
+import com.touristeye.game.gameModeAvailable
 import com.touristeye.ui.ArScreen
 
 @Composable
@@ -30,7 +36,12 @@ fun App() {
         LaunchedEffect(Unit) {
             if (!granted) permissions.request()
         }
-        if (granted) ArScreen() else PermissionScreen(permissions)
+        var gameMode by rememberSaveable { mutableStateOf(false) }
+        when {
+            !granted -> PermissionScreen(permissions)
+            gameMode -> GameScreen(onExit = { gameMode = false })
+            else -> ArScreen(onGame = if (gameModeAvailable) ({ gameMode = true }) else null)
+        }
     }
 }
 

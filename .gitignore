@@ -9,3 +9,4 @@ captures/
 iosApp/iosApp.xcodeproj/
 iosApp/*.xcworkspace/
 xcuserdata/
+composeApp/src/androidMain/assets/efficientdet_lite0.tflite

@@ -1,3 +1,4 @@
+import java.net.URI
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -51,6 +52,8 @@ kotlin {
             implementation(libs.androidx.camera.view)
             implementation(libs.kotlinx.coroutines.android)
             implementation(libs.ktor.client.okhttp)
+            implementation(libs.mediapipe.tasks.vision)
+            implementation(libs.mlkit.image.labeling)
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
@@ -69,6 +72,12 @@ android {
         // CI passes the real values; local builds use the base version from gradle.properties.
         versionCode = (findProperty("appVersionCode") as String?)?.toInt() ?: 1
         versionName = (findProperty("appVersionName") as String?) ?: "${property("appVersion")}.0-local"
+        // Only 64-bit ARM phones (every recent phone, Pixel 8 Pro included): keeps the game's
+        // native recognition libraries from multiplying the APK size.
+        ndk { abiFilters += "arm64-v8a" }
+    }
+    androidResources {
+        noCompress += "tflite"
     }
     packaging {
         resources {
@@ -85,3 +94,18 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 }
+
+// The game's object detector (EfficientDet-Lite0, COCO classes, Apache 2.0) is fetched at build time
+// instead of being committed.
+val detectorModel = layout.projectDirectory.file("src/androidMain/assets/efficientdet_lite0.tflite")
+val downloadDetectorModel by tasks.registering {
+    val target = detectorModel.asFile
+    outputs.file(target)
+    onlyIf { !target.exists() }
+    doLast {
+        target.parentFile.mkdirs()
+        val url = "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/1/efficientdet_lite0.tflite"
+        URI(url).toURL().openStream().use { input -> target.outputStream().use { output -> input.copyTo(output) } }
+    }
+}
+tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(downloadDetectorModel) }

@@ -13,6 +13,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -36,7 +40,7 @@ import io.ktor.client.HttpClient
 import io.ktor.client.plugins.HttpTimeout
 
 @Composable
-fun ArScreen() {
+fun ArScreen(onGame: (() -> Unit)? = null) {
     val scope = rememberCoroutineScope()
     val client = remember {
         HttpClient {
@@ -85,6 +89,16 @@ fun ArScreen() {
         ) {
             CompassTape(orientation, state.visible, state.selectedId, Modifier.fillMaxWidth())
             StatusLine(state, orientation, hasLocation = location != null, onRetry = controller::retry)
+        }
+
+        if (onGame != null) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.6f),
+                shape = RoundedCornerShape(50),
+                modifier = Modifier.align(Alignment.CenterEnd).windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp),
+            ) {
+                TextButton(onClick = onGame) { Text("🎯 Game", color = Color.White) }
+            }
         }
 
         val bottomModifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
