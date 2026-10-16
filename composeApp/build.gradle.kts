@@ -1,3 +1,4 @@
+import java.net.URI
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
@@ -101,7 +102,7 @@ val downloadDetectorModel by tasks.registering {
     doLast {
         target.parentFile.mkdirs()
         val url = "https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite0/int8/1/efficientdet_lite0.tflite"
-        java.net.URI(url).toURL().openStream().use { input -> target.outputStream().use { input.copyTo(it) } }
+        URI(url).toURL().openStream().use { input -> target.outputStream().use { output -> input.copyTo(output) } }
     }
 }
 tasks.matching { it.name == "preBuild" }.configureEach { dependsOn(downloadDetectorModel) }
