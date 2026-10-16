@@ -72,6 +72,9 @@ android {
         // CI passes the real values; local builds use the base version from gradle.properties.
         versionCode = (findProperty("appVersionCode") as String?)?.toInt() ?: 1
         versionName = (findProperty("appVersionName") as String?) ?: "${property("appVersion")}.0-local"
+        // Only 64-bit ARM phones (every recent phone, Pixel 8 Pro included): keeps the game's
+        // native recognition libraries from multiplying the APK size.
+        ndk { abiFilters += "arm64-v8a" }
     }
     androidResources {
         noCompress += "tflite"
