@@ -19,9 +19,9 @@ jobs:
           Q
           for ep in https://overpass-api.de/api/interpreter https://overpass.private.coffee/api/interpreter https://overpass.kumi.systems/api/interpreter https://maps.mail.ru/osm/tools/overpass/api/interpreter; do
             echo "== $ep"
-            curl -sS -m 60 -A "Touristeye/1.0 (AR sightseeing app)" -w "\nHTTP %{http_code} %{time_total}s\n" --data-urlencode data@q.txt "$ep" -o out.json || true
-            head -c 300 out.json; echo
-            python3 -c "import json,collections;d=json.load(open('out.json'));e=d.get('elements',[]);print('elements',len(e),'remark',d.get('remark'));c=collections.Counter([next((k+'='+t[k] for k in ('tourism','historic','amenity','building','natural','man_made') if k in t),'?') for t in (x.get('tags',{}) for x in e)]);print(c.most_common(25))" || true
+            curl -sS -m 60 -A "Touristeye/1.0 (AR sightseeing app)" -w "::notice title=http $ep::%{http_code} %{time_total}s\n" --data-urlencode data@q.txt "$ep" -o out.json || true
+            echo "::notice title=$ep::$(head -c 200 out.json | tr '\n' ' ')"
+            python3 -c "import json,collections;d=json.load(open('out.json'));e=d.get('elements',[]);c=collections.Counter([next((k+'='+t[k] for k in ('tourism','historic','amenity','building','natural','man_made') if k in t),'?') for t in (x.get('tags',{}) for x in e)]);print('::notice title=counts '+'$ep'+'::elements',len(e),'remark',d.get('remark'),c.most_common(25))" || true
           done
           echo "== wikipedia"
-          curl -sS -m 30 -A "Touristeye/1.0" "https://es.wikipedia.org/w/api.php?action=query&generator=geosearch&ggscoord=43.3224|-1.9839&ggsradius=2000&ggslimit=10&prop=description|coordinates|pageprops&ppprop=wikibase_item&format=json" | head -c 3000
+          curl -sS -m 30 -A "Touristeye/1.0" "https://es.wikipedia.org/w/api.php?action=query&generator=geosearch&ggscoord=43.3224|-1.9839&ggsradius=2000&ggslimit=10&prop=description|coordinates|pageprops&ppprop=wikibase_item&format=json" -o w.json; echo "::notice title=wiki::$(head -c 3000 w.json)"
