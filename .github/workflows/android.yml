@@ -89,14 +89,16 @@ jobs:
             --title "Touristeye ${{ steps.version.outputs.name }}" \
             --generate-notes
 
-      # A branch that is deleted after its PR merges leaves its snapshot behind; clear snapshots of merged branches.
-      - name: Remove snapshots of deleted branches
+      # A branch that is deleted after its PR merges leaves its snapshot behind; clear snapshots of deleted
+      # branches, and the old build-N releases from before versioning.
+      - name: Remove old snapshots
         if: github.ref_name == 'main'
         run: |
-          for tag in $(gh release list --limit 100 --json tagName --jq '.[].tagName' | grep '^snapshot-' || true); do
-            slug="${tag#snapshot-}"
-            if ! git ls-remote --exit-code --heads origin | awk '{print $2}' | sed 's#refs/heads/##' \
-                 | tr -c 'A-Za-z0-9._-\n' '-' | sed 's/-*$//' | grep -qx "$slug"; then
-              gh release delete "$tag" --cleanup-tag --yes
-            fi
+          live=$(git ls-remote --heads origin | sed 's#.*refs/heads/##' | while read -r b; do
+            echo "$b" | tr -c 'A-Za-z0-9._-' '-' | sed 's/-*$//'; echo; done)
+          for tag in $(gh release list --limit 100 --json tagName --jq '.[].tagName'); do
+            case "$tag" in
+              snapshot-*) echo "$live" | grep -qx "${tag#snapshot-}" || gh release delete "$tag" --cleanup-tag --yes ;;
+              build-*) gh release delete "$tag" --cleanup-tag --yes ;;
+            esac
           done
