@@ -118,7 +118,7 @@ fun GameScreen(onExit: () -> Unit) {
                         topLeft = Offset(tl.x, tl.y),
                         size = Size(br.x - tl.x, br.y - tl.y),
                         cornerRadius = CornerRadius(12.dp.toPx()),
-                        style = Stroke(width = (if (isTarget) 3 else 1.5f).dp.toPx()),
+                        style = Stroke(width = (if (isTarget) 3f else 1.5f).dp.toPx()),
                     )
                 }
             }
