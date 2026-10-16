@@ -3,6 +3,7 @@ package com.touristeye.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
@@ -10,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -23,7 +25,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.touristeye.app.ArController
-import com.touristeye.data.FallbackPoiSource
 import com.touristeye.data.OverpassPoiSource
 import com.touristeye.data.WikipediaPoiSource
 import com.touristeye.platform.CameraPreview
@@ -40,7 +41,7 @@ fun ArScreen() {
     val client = remember {
         HttpClient {
             install(HttpTimeout) {
-                requestTimeoutMillis = 35_000
+                requestTimeoutMillis = 60_000
                 connectTimeoutMillis = 10_000
             }
         }
@@ -49,11 +50,9 @@ fun ArScreen() {
     val controller = remember {
         val language = platformLanguage()
         ArController(
-            source = FallbackPoiSource(
-                listOf(
-                    OverpassPoiSource(client, language = language),
-                    WikipediaPoiSource(client, language = language),
-                ),
+            sources = listOf(
+                OverpassPoiSource(client, language = language),
+                WikipediaPoiSource(client, language = language),
             ),
             scope = scope,
         )
@@ -66,7 +65,10 @@ fun ArScreen() {
 
     LaunchedEffect(location) { location?.let(controller::onLocation) }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    BoxWithConstraints(Modifier.fillMaxSize().background(Color.Black)) {
+        val landscape = maxWidth > maxHeight
+        val screenFov = fov.forViewport(maxWidth.value.toDouble(), maxHeight.value.toDouble())
+
         CameraPreview(Modifier.fillMaxSize())
 
         ArOverlay(
@@ -85,29 +87,33 @@ fun ArScreen() {
             StatusLine(state, orientation, hasLocation = location != null, onRetry = controller::retry)
         }
 
-        Column(
-            Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                .windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            val selected = state.selected
-            if (selected != null) {
-                PoiCard(selected, onClose = { controller.select(null) })
-            } else {
-                Row(verticalAlignment = Alignment.Bottom, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Radar(
-                        orientation = orientation,
-                        pois = state.visible,
-                        radiusMeters = state.radiusMeters,
-                        fov = fov,
-                        modifier = Modifier,
-                    )
+        val bottomModifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+            .windowInsetsPadding(WindowInsets.safeDrawing).padding(12.dp)
+        val selected = state.selected
+        if (landscape) {
+            // Landscape: radar on the left, panel on the right, so the middle of the view stays clear.
+            Row(
+                bottomModifier,
+                verticalAlignment = Alignment.Bottom,
+                horizontalArrangement = Arrangement.SpaceBetween,
+            ) {
+                Radar(orientation, state.visible, state.radiusMeters, screenFov)
+                Box(Modifier.widthIn(max = 420.dp)) {
+                    if (selected != null) {
+                        PoiCard(selected, onClose = { controller.select(null) })
+                    } else {
+                        Controls(state, onRadius = controller::setRadius, onToggleCategory = controller::toggleCategory)
+                    }
                 }
-                Controls(
-                    state = state,
-                    onRadius = controller::setRadius,
-                    onToggleCategory = controller::toggleCategory,
-                )
+            }
+        } else {
+            Column(bottomModifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (selected != null) {
+                    PoiCard(selected, onClose = { controller.select(null) })
+                } else {
+                    Radar(orientation, state.visible, state.radiusMeters, screenFov)
+                    Controls(state, onRadius = controller::setRadius, onToggleCategory = controller::toggleCategory)
+                }
             }
         }
     }

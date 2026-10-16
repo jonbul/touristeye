@@ -14,9 +14,11 @@ One Kotlin codebase for **Android** and **iOS** (Kotlin Multiplatform + Compose 
 - **Compass tape** at the top with your heading and a dot for every place around you.
 - **Radar** (bottom left) with places around you, rotated so the way you face is up.
 - **Radius slider**: 250 m, 500 m, 1 km, 2 km, 5 km, 10 km or 20 km.
-- **Category filters**: Sights, Museums, Historic, Religious, Viewpoints, Nature.
+- **Category filters**: Sights, Museums, Art, Historic, Religious, Viewpoints, Nature.
 - **Tap a label** to see details and open its Wikipedia article, website or map. When the selected place
   is out of view, an arrow at the screen edge tells you which way to turn.
+
+Android follows the phone's rotation (portrait and landscape); iOS is portrait only for now.
 
 ## How it works
 
@@ -26,7 +28,7 @@ One Kotlin codebase for **Android** and **iOS** (Kotlin Multiplatform + Compose 
 | Where the camera points | Accelerometer + gyroscope + magnetometer fused: Android rotation-vector sensor (fallback: gravity/accelerometer + magnetometer) with magnetic declination → true north · iOS CoreMotion device motion in `XTrueNorthZVertical` |
 | Camera preview | Android CameraX `PreviewView` · iOS `AVCaptureVideoPreviewLayer` |
 | Camera field of view | Android: sensor size and focal length (Camera2) · iOS: `activeFormat.videoFieldOfView` |
-| Places | [OpenStreetMap](https://www.openstreetmap.org) via the Overpass API; falls back to Wikipedia geosearch if Overpass fails |
+| Places | [OpenStreetMap](https://www.openstreetmap.org) via the public Overpass servers (several, tried in turn when one is slow) and nearby Wikipedia articles, both free with no API key. Both are asked at once; Wikipedia articles are categorised from their short description and dropped when OpenStreetMap already has the place |
 | Projection, label layout, filtering | Shared Kotlin in `composeApp/src/commonMain` |
 
 The shared code turns the device's camera direction into azimuth, pitch and roll, then projects each

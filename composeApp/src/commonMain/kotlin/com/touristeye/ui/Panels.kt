@@ -43,9 +43,10 @@ fun StatusLine(state: ArState, orientation: DeviceOrientation?, hasLocation: Boo
     val (text, action) = when {
         !hasLocation -> "📡 Finding your location…" to null
         state.error != null -> "⚠️ Couldn't load places. Tap to retry" to onRetry
-        state.loading -> "⏳ Loading places nearby…" to null
+        state.loading && state.visible.isEmpty() -> "⏳ Loading places nearby…" to null
         orientation == null -> "🧭 Waiting for the compass…" to null
         !orientation.reliable -> "🧭 Move your phone in a figure 8 to calibrate the compass" to null
+        state.loading -> "⏳ Loading more places…" to null
         state.visible.isEmpty() -> "No places within ${GeoMath.formatDistance(state.radiusMeters.toDouble())}" to null
         else -> return
     }

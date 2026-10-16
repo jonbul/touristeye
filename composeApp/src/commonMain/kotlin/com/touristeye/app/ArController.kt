@@ -1,5 +1,6 @@
 package com.touristeye.app
 
+import com.touristeye.data.PoiMerge
 import com.touristeye.data.PoiSource
 import com.touristeye.geo.GeoLocation
 import com.touristeye.geo.GeoMath
@@ -10,6 +11,7 @@ import com.touristeye.geo.placedFrom
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -41,9 +43,10 @@ data class ArState(
 /**
  * Keeps the list of nearby POIs up to date as the user moves or changes the radius.
  * Fetches again only when the user leaves the area of the last download or widens the radius.
+ * All sources are asked at once and their results are shown as soon as each one answers.
  */
 class ArController(
-    private val source: PoiSource,
+    private val sources: List<PoiSource>,
     private val scope: CoroutineScope,
     private val radiusDebounce: Duration = 600.milliseconds,
     private val errorBackoff: Duration = 15.seconds,
@@ -103,18 +106,32 @@ class ArController(
         val radius = s.radiusMeters
         fetchJob = scope.launch {
             _state.update { it.copy(loading = true, error = null) }
-            try {
-                val pois = source.fetch(location, radius)
+            val results = arrayOfNulls<List<Poi>>(sources.size)
+            var lastError: Throwable? = null
+            coroutineScope {
+                sources.forEachIndexed { i, source ->
+                    launch {
+                        try {
+                            results[i] = source.fetch(location, radius)
+                            val merged = PoiMerge.merge(results.filterNotNull())
+                            _state.update { it.copy(allPois = merged) }
+                            recompute()
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Throwable) {
+                            lastError = e
+                        }
+                    }
+                }
+            }
+            if (results.any { it != null }) {
                 fetchedCenter = location
                 fetchedRadius = radius
                 retryAfter = null
-                _state.update { it.copy(allPois = pois, loading = false) }
-                recompute()
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Throwable) {
+                _state.update { it.copy(loading = false) }
+            } else {
                 retryAfter = TimeSource.Monotonic.markNow() + errorBackoff
-                _state.update { it.copy(loading = false, error = e.message ?: "Could not load places") }
+                _state.update { it.copy(loading = false, error = lastError?.message ?: "Could not load places") }
             }
         }
     }

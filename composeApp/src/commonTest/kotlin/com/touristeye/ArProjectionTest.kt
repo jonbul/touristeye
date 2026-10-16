@@ -64,6 +64,15 @@ class ArProjectionTest {
     }
 
     @Test
+    fun landscapeSwapsFieldOfView() {
+        assertEquals(CameraFov(64.0, 50.0), fov.forViewport(2340.0, 1080.0))
+        assertEquals(fov, fov.forViewport(1080.0, 2340.0))
+        val landscape = ArProjector(fov.forViewport(2340.0, 1080.0), 2340.0, 1080.0)
+        // Wide screen: the full 64° is horizontal, the height is cropped.
+        assertEquals(tan(GeoMath.toRad(32.0)), landscape.tanHalfH, 1e-12)
+    }
+
+    @Test
     fun straightAheadIsCenter() {
         val o = DeviceOrientation(azimuth = 123.0, pitch = 0.0, roll = 0.0)
         val p = assertNotNull(projector.project(123.0, 0.0, o))

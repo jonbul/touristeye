@@ -2,6 +2,7 @@ package com.touristeye.platform
 
 import android.content.Context
 import android.hardware.camera2.CameraCharacteristics
+import android.hardware.display.DisplayManager
 import android.hardware.camera2.CameraManager
 import android.util.Log
 import androidx.camera.core.CameraSelector
@@ -35,20 +36,37 @@ actual fun CameraPreview(modifier: Modifier) {
     DisposableEffect(lifecycleOwner) {
         val future = ProcessCameraProvider.getInstance(context)
         var provider: ProcessCameraProvider? = null
+        var preview: Preview? = null
+
+        // The activity handles rotation itself, so tell CameraX when the screen turns.
+        val displayManager = context.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+        val displayListener = object : DisplayManager.DisplayListener {
+            override fun onDisplayAdded(displayId: Int) {}
+            override fun onDisplayRemoved(displayId: Int) {}
+            override fun onDisplayChanged(displayId: Int) {
+                previewView.display?.let { preview?.targetRotation = it.rotation }
+            }
+        }
+        displayManager.registerDisplayListener(displayListener, null)
         future.addListener({
             try {
                 val cameraProvider = future.get()
                 provider = cameraProvider
-                val preview = Preview.Builder().build().also {
+                val newPreview = Preview.Builder().build().also {
                     it.setSurfaceProvider(previewView.surfaceProvider)
+                    previewView.display?.let { display -> it.targetRotation = display.rotation }
                 }
+                preview = newPreview
                 cameraProvider.unbindAll()
-                cameraProvider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview)
+                cameraProvider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, newPreview)
             } catch (e: Exception) {
                 Log.e("Touristeye", "Camera start failed", e)
             }
         }, ContextCompat.getMainExecutor(context))
-        onDispose { provider?.unbindAll() }
+        onDispose {
+            displayManager.unregisterDisplayListener(displayListener)
+            provider?.unbindAll()
+        }
     }
 
     AndroidView(factory = { previewView }, modifier = modifier)

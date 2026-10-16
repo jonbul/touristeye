@@ -3,6 +3,7 @@ package com.touristeye.geo
 enum class PoiCategory(val emoji: String, val label: String) {
     Attraction("⭐", "Sights"),
     Museum("🏛️", "Museums"),
+    Art("🎨", "Art"),
     Historic("🏰", "Historic"),
     Religious("⛪", "Religious"),
     Viewpoint("🔭", "Viewpoints"),
