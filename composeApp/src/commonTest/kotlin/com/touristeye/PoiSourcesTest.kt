@@ -196,7 +196,7 @@ class PoiSourcesTest {
             else respond("""[{"place_id":5,"osm_type":"node","osm_id":5,"lat":"40.4","lon":"-3.7","category":"shop","type":"bakery","name":"Far bakery","display_name":"Far bakery, Madrid"}]""")
         })
         val results = NominatimPlaceSearch(client).search("bakery", GeoLocation(43.32, -1.98))
-        assertEquals(listOf("1", "0"), bounded)
+        assertEquals(listOf<String?>("1", "0"), bounded.toList())
         assertEquals(listOf("Far bakery"), results.map { it.name })
     }
 
