@@ -18,13 +18,16 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.touristeye.app.ArController
+import com.touristeye.data.NominatimPlaceSearch
 import com.touristeye.data.OverpassPoiSource
 import com.touristeye.data.WikipediaPoiSource
 import com.touristeye.platform.CameraPreview
@@ -55,10 +58,13 @@ fun ArScreen() {
                 WikipediaPoiSource(client, language = language),
             ),
             scope = scope,
+            placeSearch = NominatimPlaceSearch(client, language = language),
         )
     }
 
     val state by controller.state.collectAsState()
+    val search by controller.search.collectAsState()
+    var searchOpen by remember { mutableStateOf(false) }
     val location by rememberLocation()
     val orientation by rememberDeviceOrientation(location)
     val fov = rememberCameraFov()
@@ -102,7 +108,12 @@ fun ArScreen() {
                     if (selected != null) {
                         PoiCard(selected, onClose = { controller.select(null) })
                     } else {
-                        Controls(state, onRadius = controller::setRadius, onToggleCategory = controller::toggleCategory)
+                        Controls(
+                            state,
+                            onRadius = controller::setRadius,
+                            onToggleCategory = controller::toggleCategory,
+                            onOpenSearch = { searchOpen = true },
+                        )
                     }
                 }
             }
@@ -112,9 +123,26 @@ fun ArScreen() {
                     PoiCard(selected, onClose = { controller.select(null) })
                 } else {
                     Radar(orientation, state.visible, state.radiusMeters, screenFov)
-                    Controls(state, onRadius = controller::setRadius, onToggleCategory = controller::toggleCategory)
+                    Controls(
+                        state,
+                        onRadius = controller::setRadius,
+                        onToggleCategory = controller::toggleCategory,
+                        onOpenSearch = { searchOpen = true },
+                    )
                 }
             }
+        }
+
+        if (searchOpen) {
+            PlaceSearchDialog(
+                search = search,
+                added = state.searched,
+                location = location,
+                onSearch = controller::searchPlaces,
+                onAdd = controller::addSearched,
+                onRemove = controller::removeSearched,
+                onDismiss = { searchOpen = false },
+            )
         }
     }
 }

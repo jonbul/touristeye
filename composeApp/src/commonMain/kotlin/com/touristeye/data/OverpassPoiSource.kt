@@ -166,21 +166,21 @@ internal data class OverpassElement(
             latitude = latitude,
             longitude = longitude,
             category = category,
-            elevation = tags["ele"]?.let(::parseElevation),
+            elevation = tags["ele"]?.let(::parseOsmElevation),
             description = tags["description"],
-            wikipediaUrl = tags["wikipedia"]?.let(::wikipediaUrl),
+            wikipediaUrl = tags["wikipedia"]?.let(::osmWikipediaUrl),
             website = tags["website"] ?: tags["contact:website"],
             source = "OpenStreetMap",
         )
     }
+}
 
-    private fun parseElevation(raw: String): Double? =
-        raw.trim().removeSuffix("m").trim().replace(',', '.').toDoubleOrNull()
+internal fun parseOsmElevation(raw: String): Double? =
+    raw.trim().removeSuffix("m").trim().replace(',', '.').toDoubleOrNull()
 
-    /** OSM stores "lang:Title"; turn it into a URL. */
-    private fun wikipediaUrl(tag: String): String? {
-        val parts = tag.split(":", limit = 2)
-        if (parts.size != 2 || parts[0].length !in 2..12) return null
-        return "https://${parts[0]}.wikipedia.org/wiki/${parts[1].trim().replace(' ', '_')}"
-    }
+/** OSM stores "lang:Title"; turn it into a URL. */
+internal fun osmWikipediaUrl(tag: String): String? {
+    val parts = tag.split(":", limit = 2)
+    if (parts.size != 2 || parts[0].length !in 2..12) return null
+    return "https://${parts[0]}.wikipedia.org/wiki/${parts[1].trim().replace(' ', '_')}"
 }

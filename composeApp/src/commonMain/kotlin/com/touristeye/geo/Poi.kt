@@ -8,6 +8,8 @@ enum class PoiCategory(val emoji: String, val label: String) {
     Religious("⛪", "Religious"),
     Viewpoint("🔭", "Viewpoints"),
     Nature("⛰️", "Nature"),
+    /** Places the user found with the search box and added themselves; always shown, whatever the radius. */
+    Searched("📍", "Search"),
 }
 
 data class Poi(
