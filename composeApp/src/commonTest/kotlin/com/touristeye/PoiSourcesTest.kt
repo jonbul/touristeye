@@ -1,6 +1,8 @@
 package com.touristeye
 
 import com.touristeye.app.ArController
+import com.touristeye.data.NominatimPlaceSearch
+import com.touristeye.data.PlaceSearch
 import com.touristeye.data.PoiMerge
 import com.touristeye.data.OverpassPoiSource
 import com.touristeye.data.PoiSource
@@ -164,6 +166,67 @@ class PoiSourcesTest {
         testScope.advanceUntilIdle()
         assertEquals("boom", controller.state.value.error)
         assertTrue(!controller.state.value.loading)
+    }
+
+    @Test
+    fun parsesNominatimResults() {
+        val json = """[
+          {"place_id":1,"osm_type":"way","osm_id":10,"lat":"43.3215","lon":"-1.9850","category":"highway","type":"pedestrian","name":"Calle Mayor","display_name":"Calle Mayor, Parte Vieja, Donostia/San Sebastián, Gipuzkoa, España"},
+          {"place_id":2,"osm_type":"node","osm_id":20,"lat":"43.3230","lon":"-1.9860","category":"amenity","type":"restaurant","name":"Bar Txepetxa","display_name":"Bar Txepetxa, 5, Pescadería kalea, Parte Vieja, Donostia","extratags":{"website":"https://txepetxa.example","wikipedia":"es:Txepetxa"}},
+          {"place_id":3,"lat":"43.31","lon":"-1.97","category":"place","type":"house","name":"","display_name":"12, Avenida de la Libertad, Centro"},
+          {"place_id":4,"osm_type":"node","osm_id":20,"lat":"43.3230","lon":"-1.9860","category":"amenity","type":"restaurant","name":"Bar Txepetxa","display_name":"duplicate"}
+        ]"""
+        val pois = NominatimPlaceSearch.parse(json)
+        assertEquals(listOf("osm:way/10", "osm:node/20", "nominatim:3"), pois.map { it.id })
+        assertTrue(pois.all { it.category == PoiCategory.Searched })
+        assertEquals("Street · Parte Vieja, Donostia/San Sebastián, Gipuzkoa", pois[0].description)
+        assertEquals("https://txepetxa.example", pois[1].website)
+        assertEquals("https://es.wikipedia.org/wiki/Txepetxa", pois[1].wikipediaUrl)
+        assertEquals("Restaurant · 5, Pescadería kalea, Parte Vieja", pois[1].description)
+        assertEquals("12", pois[2].name)
+    }
+
+    @Test
+    fun nominatimSearchesNearbyFirstThenEverywhere() = runTest {
+        val bounded = mutableListOf<String?>()
+        val client = HttpClient(MockEngine { request ->
+            bounded += request.url.parameters["bounded"]
+            assertTrue(request.url.parameters["viewbox"] != null)
+            if (request.url.parameters["bounded"] == "1") respond("[]")
+            else respond("""[{"place_id":5,"osm_type":"node","osm_id":5,"lat":"40.4","lon":"-3.7","category":"shop","type":"bakery","name":"Far bakery","display_name":"Far bakery, Madrid"}]""")
+        })
+        val results = NominatimPlaceSearch(client).search("bakery", GeoLocation(43.32, -1.98))
+        assertEquals(listOf<String?>("1", "0"), bounded.toList())
+        assertEquals(listOf("Far bakery"), results.map { it.name })
+    }
+
+    @Test
+    fun controllerAddsSearchedPlacesWhateverTheRadiusAndFilters() = runTest {
+        val far = poi("osm:node/9", 43.40, -1.98).copy(category = PoiCategory.Searched) // ~9 km
+        val search = object : PlaceSearch {
+            override suspend fun search(query: String, near: GeoLocation?) = listOf(far)
+        }
+        val testScope = TestScope(StandardTestDispatcher(testScheduler))
+        val controller = ArController(listOf(FakeSource(listOf(poi("near", 43.3210, -1.98)))), testScope, placeSearch = search)
+        controller.setRadius(1_000)
+        controller.onLocation(GeoLocation(43.32, -1.98))
+        testScope.advanceUntilIdle()
+
+        controller.searchPlaces("faro")
+        testScope.advanceUntilIdle()
+        assertEquals(listOf(far), controller.search.value.results)
+
+        controller.addSearched(controller.search.value.results)
+        controller.addSearched(controller.search.value.results)
+        assertEquals(listOf("near", "osm:node/9"), controller.state.value.visible.map { it.poi.id })
+
+        controller.toggleCategory(PoiCategory.Attraction)
+        assertEquals(listOf("osm:node/9"), controller.state.value.visible.map { it.poi.id })
+
+        controller.select("osm:node/9")
+        controller.removeSearched("osm:node/9")
+        assertTrue(controller.state.value.visible.isEmpty())
+        assertNull(controller.state.value.selectedId)
     }
 
     private fun poi(id: String, lat: Double, lon: Double) =

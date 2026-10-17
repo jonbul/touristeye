@@ -1,6 +1,7 @@
 package com.touristeye.app
 
 import com.touristeye.data.PoiMerge
+import com.touristeye.data.PlaceSearch
 import com.touristeye.data.PoiSource
 import com.touristeye.geo.GeoLocation
 import com.touristeye.geo.GeoMath
@@ -36,9 +37,20 @@ data class ArState(
     val loading: Boolean = false,
     val error: String? = null,
     val selectedId: String? = null,
+    /** Places added from the search box, shown on top of the downloaded ones. */
+    val searched: List<Poi> = emptyList(),
 ) {
     val selected: PlacedPoi? get() = selectedId?.let { id -> visible.firstOrNull { it.poi.id == id } }
 }
+
+data class SearchState(
+    val query: String = "",
+    val results: List<Poi> = emptyList(),
+    val loading: Boolean = false,
+    val error: String? = null,
+    /** True once a search has finished, so "no results" can be told apart from "not searched yet". */
+    val searched: Boolean = false,
+)
 
 /**
  * Keeps the list of nearby POIs up to date as the user moves or changes the radius.
@@ -48,6 +60,7 @@ data class ArState(
 class ArController(
     private val sources: List<PoiSource>,
     private val scope: CoroutineScope,
+    private val placeSearch: PlaceSearch? = null,
     private val radiusDebounce: Duration = 600.milliseconds,
     private val errorBackoff: Duration = 15.seconds,
 ) {
@@ -59,6 +72,10 @@ class ArController(
     private var fetchJob: Job? = null
     private var debounceJob: Job? = null
     private var retryAfter: TimeSource.Monotonic.ValueTimeMark? = null
+    private var searchJob: Job? = null
+
+    private val _search = MutableStateFlow(SearchState())
+    val search: StateFlow<SearchState> = _search.asStateFlow()
 
     fun onLocation(location: GeoLocation) {
         _state.update { it.copy(location = location) }
@@ -86,6 +103,45 @@ class ArController(
     }
 
     fun select(poiId: String?) = _state.update { it.copy(selectedId = poiId) }
+
+    fun searchPlaces(query: String) {
+        val engine = placeSearch ?: return
+        searchJob?.cancel()
+        if (query.isBlank()) {
+            _search.value = SearchState()
+            return
+        }
+        _search.value = SearchState(query = query, loading = true)
+        searchJob = scope.launch {
+            try {
+                val results = engine.search(query, _state.value.location)
+                _search.update { it.copy(results = results, loading = false, searched = true) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Throwable) {
+                _search.update { it.copy(loading = false, searched = true, error = e.message ?: "Search failed") }
+            }
+        }
+    }
+
+    /** Adds places from the search results to the AR view; ones already added are skipped. */
+    fun addSearched(pois: List<Poi>) {
+        _state.update { s ->
+            val known = s.searched.map { it.id }.toSet()
+            s.copy(searched = s.searched + pois.filter { it.id !in known })
+        }
+        recompute()
+    }
+
+    fun removeSearched(poiId: String) {
+        _state.update { s ->
+            s.copy(
+                searched = s.searched.filterNot { it.id == poiId },
+                selectedId = s.selectedId.takeIf { it != poiId },
+            )
+        }
+        recompute()
+    }
 
     fun retry() {
         retryAfter = null
@@ -139,11 +195,14 @@ class ArController(
     private fun recompute() {
         _state.update { s ->
             val loc = s.location ?: return@update s
-            val visible = s.allPois
+            val searchedIds = s.searched.map { it.id }.toSet()
+            val nearby = s.allPois
                 .asSequence()
-                .filter { it.category in s.enabledCategories }
+                .filter { it.category in s.enabledCategories && it.id !in searchedIds }
                 .map { it.placedFrom(loc) }
                 .filter { it.distanceMeters <= s.radiusMeters }
+            // The user picked these, so they stay visible whatever the radius or category filters.
+            val visible = (nearby + s.searched.asSequence().map { it.placedFrom(loc) })
                 .sortedBy { it.distanceMeters }
                 .toList()
             s.copy(visible = visible)

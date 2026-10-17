@@ -65,6 +65,7 @@ fun Controls(
     state: ArState,
     onRadius: (Int) -> Unit,
     onToggleCategory: (PoiCategory) -> Unit,
+    onOpenSearch: () -> Unit,
 ) {
     Surface(color = PanelColor, contentColor = Color.White, shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
@@ -85,7 +86,15 @@ fun Controls(
                 steps = RadiusOptions.size - 2,
             )
             Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                for (category in PoiCategory.entries) {
+                FilterChip(
+                    selected = state.searched.isNotEmpty(),
+                    onClick = onOpenSearch,
+                    label = {
+                        val count = state.searched.size
+                        Text(if (count > 0) "🔍 Search ($count)" else "🔍 Search")
+                    },
+                )
+                for (category in PoiCategory.entries.filter { it != PoiCategory.Searched }) {
                     FilterChip(
                         selected = category in state.enabledCategories,
                         onClick = { onToggleCategory(category) },

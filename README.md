@@ -15,6 +15,8 @@ One Kotlin codebase for **Android** and **iOS** (Kotlin Multiplatform + Compose 
 - **Radar** (bottom left) with places around you, rotated so the way you face is up.
 - **Radius slider**: 250 m, 500 m, 1 km, 2 km, 5 km, 10 km or 20 km.
 - **Category filters**: Sights, Museums, Art, Historic, Religious, Viewpoints, Nature.
+- **Search** (first chip in the category row): look up any place, such as a street, shop, restaurant or address,
+  tick the results you want and they are added to the view with a 📍, whatever the radius or filters.
 - **Tap a label** to see details and open its Wikipedia article, website or map. When the selected place
   is out of view, an arrow at the screen edge tells you which way to turn.
 
@@ -29,6 +31,7 @@ Android follows the phone's rotation (portrait and landscape); iOS is portrait o
 | Camera preview | Android CameraX `PreviewView` · iOS `AVCaptureVideoPreviewLayer` |
 | Camera field of view | Android: sensor size and focal length (Camera2) · iOS: `activeFormat.videoFieldOfView` |
 | Places | [OpenStreetMap](https://www.openstreetmap.org) via the public Overpass servers (several, tried in turn when one is slow) and nearby Wikipedia articles, both free with no API key. Both are asked at once; Wikipedia articles are categorised from their short description and dropped when OpenStreetMap already has the place |
+| Search | OpenStreetMap's public [Nominatim](https://nominatim.org) server: nearby matches first (25 km around you, nearest first), the whole map when nothing nearby matches. Searches run on submit to respect its one-request-per-second policy |
 | Projection, label layout, filtering | Shared Kotlin in `composeApp/src/commonMain` |
 
 The shared code turns the device's camera direction into azimuth, pitch and roll, then projects each
@@ -41,7 +44,7 @@ composeApp/src/
   commonMain/kotlin/com/touristeye/
     geo/        distances, bearings, POI model
     ar/         orientation math, camera projection, label stacking
-    data/       Overpass + Wikipedia sources
+    data/       Overpass + Wikipedia sources, Nominatim search
     app/        ArController (state, when to download)
     ui/         Compose screens: overlay, compass tape, radar, panels
     platform/   expect declarations (camera, sensors, location, permissions)
